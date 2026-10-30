@@ -1,0 +1,52 @@
+name: Make Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      audio_url:
+        required: true
+      image_url:
+        required: true
+      title:
+        required: true
+      description:
+        required: false
+      tags:
+        required: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Download audio and image
+        env:
+          AUDIO_URL: ${{ inputs.audio_url }}
+          IMAGE_URL: ${{ inputs.image_url }}
+        run: |
+          curl -L --fail --retry 3 -o audio.mp3 "$AUDIO_URL"
+          curl -L --fail --retry 3 -o image.jpg "$IMAGE_URL"
+
+      - name: Render video
+        run: |
+          ffmpeg -y -loop 1 -i image.jpg -i audio.mp3 \
+            -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p" \
+            -c:v libx264 -tune stillimage -preset veryfast \
+            -c:a aac -b:a 128k -shortest video.mp4
+
+      - name: Send video to n8n
+        env:
+          NEWS_TOKEN: ${{ secrets.NEWS_TOKEN }}
+          TITLE: ${{ inputs.title }}
+          DESCRIPTION: ${{ inputs.description }}
+          TAGS: ${{ inputs.tags }}
+        run: |
+          curl --fail -X POST "https://gajananambhore.app.n8n.cloud/webhook/youtube-video-ready" \
+            -H "X-News-Token: $NEWS_TOKEN" \
+            -F "video=@video.mp4;type=video/mp4" \
+            --form-string "title=$TITLE" \
+            --form-string "description=$DESCRIPTION" \
+            --form-string "tags=$TAGS"
